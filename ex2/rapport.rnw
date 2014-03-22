@@ -1,0 +1,188 @@
+\documentclass[a4paper]{article}
+
+\usepackage{fullpage}
+\usepackage{amsmath}
+
+\begin{document}
+
+%<<my-label, eval=TRUE, dev='png'>>=
+%library(spam) # load the data
+%str(Oral) # see structure of data
+%#'data.frame': 544 obs. of 3 variables:
+%# $ Y : int 18 62 44 12 18 27 20 29 39 21 . . .
+%# $ E : num 16.4 45.9 44.7 16.3 26.9 . . .
+%# $ SMR: num 1.101 1.351 0.985 0.735 0.668 . . .
+%attach(Oral) # allow direct referencing to Y and E
+%# generate some plots
+%library(fields, warn.conflict=FALSE)
+%library(colorspace)
+%col <- diverge_hcl(8) # blue - red
+%# alternative colors
+%# col <- rev(gray(0:8 / 8)) # gray scales
+%# col <- rev(heat_hcl(64))
+%# use the function provided by spam
+%map.landkreis(log(Oral$Y),col=col)
+%map.landkreis(Oral$Y/Oral$E,col=col)
+%@
+
+\section*{Excercise 1}
+\subsection*{a)}
+We want to find the full posterior distribution $p\left(\eta, u, \kappa_u, \kappa_v \mid y\right)$, using the following
+\begin{align}
+\kappa_u & \sim \mathrm{Gamma}(\alpha_u, \beta_u) \\
+\kappa_v & \sim \mathrm{Gamma}(\alpha_v, \beta_v) \\
+v \mid \kappa_v & \sim \mathcal{N}\left(\mathbf{0}, \kappa_v^{-1}\mathbf{I}\right) \\
+p(u \mid \kappa_u) & \propto \kappa_u^{(n-1)/2} \exp\left(-\frac{\kappa_u}{2}u^TRu\right) \\
+\eta \mid u, \kappa_v & \sim \mathcal{N}\left(u, \kappa_v^{-1}\mathbf{I}\right) \\
+y_i \mid \eta_i & \sim \mathrm{Pois}\left(e_i \exp(\eta_i)\right).
+\end{align}
+We proceed as follows:
+\begin{equation}
+\begin{aligned}
+p\left(\eta, u, \kappa_u, \kappa_v \mid y\right) & \propto p(y \mid \eta, u, \kappa_u, \kappa_v) \, p(\eta, u, \kappa_u, \kappa_v) \\
+& \propto \prod_i p(y_i \mid \eta_i) \, p(\eta \mid u, \kappa_v) \, p(u \mid \kappa_u) \, p(\kappa_u) \, p(\kappa_v).
+\end{aligned}
+\end{equation}
+Writing out the terms we obtain
+\begin{equation}
+\begin{aligned}
+p\left(\eta, u, \kappa_u, \kappa_v \mid y\right)
+& \propto \prod_i \frac{e_i^{y_i} \exp(\eta_i y_i) \exp\left(-e_i \exp(\eta_i)\right)}{y_i!} \\
+& \cdot \kappa_v^{n/2} \exp\left(-\frac{\kappa_v}{2}\left(\eta - u\right)^T\left(\eta - u\right)\right) \\
+& \cdot \kappa_u^{(n-1)/2} \exp\left(-\frac{\kappa_u}{2}u^TRu\right) \\
+& \cdot \kappa_u^{\alpha_u - 1} \exp(-\beta_u \kappa_u) \\
+& \cdot \kappa_v^{\alpha_v - 1} \exp(-\beta_v \kappa_v).
+\end{aligned}
+\end{equation}
+Multiplying together we obtain
+\begin{equation}
+\kappa_u^{\frac{n-1}{2} + \alpha_u - 1} \kappa_v^{\frac{n}{2} + \alpha_v - 1}
+\exp\left(-\beta_u\kappa_u - \beta_v\kappa_v 
+- \frac{\kappa_v}{2}\left(\eta - u\right)^T\left(\eta - u\right)
+- \frac{\kappa_u}{2}u^TRu
++ \sum_i \left( \eta_i y_i - e_i \exp(\eta_i)\right)
+\right).
+\label{eq:full_joint_posterior}
+\end{equation}
+\subsection*{b)}
+Differentiating with respect to $\eta_i$ yields
+\begin{align}
+f(\eta_i) & = y_i \eta_i - \exp(\eta_i) e_i \\
+f'(\eta_i) & = y_i - \exp(\eta_i) e_i \\
+f''(\eta_i) & = - \exp(\eta_i) e_i
+\end{align}
+and inserting this into the Taylor expansion
+\begin{equation}
+\tilde{f}(\eta_i) = f(\eta_{0_i}) + f'(\eta_{0_i})(\eta_i - \eta_{i_0}) + \frac{1}{2} f''(\eta_{0_i})(\eta_i - \eta_{0_i})^2
+\end{equation}
+we obtain
+\begin{equation}
+\begin{aligned}
+\tilde{f}(\eta_i) & = \eta_i \left( y_i - \exp(\eta_{0_i}) e_i + \exp(\eta_{0_i}) e_i \eta_{0_i}\right) \\
+ & + \eta_i^2 \left( -\frac{1}{2} \exp(\eta_{0_i}) e_i \right) \\
+ & - \exp(\eta_{0_i}) e_i + \exp(\eta_{0_i}) e_i \eta_{0_i} - \frac{1}{2} \exp(\eta_{0_i}) e_i \eta_{0_i}^2
+\end{aligned}
+\end{equation}
+which we rewrite as
+\begin{equation}
+\begin{aligned}
+\tilde{f}(\eta_i) &= a_i + b_i \eta_i - \frac{1}{2}c_i \eta_i^2 \\
+a_i &= \exp(\eta_{0_i}) e_i ( \eta_{0_i} - \frac{1}{2} \eta_{0_i}^2 - 1) \\
+b_i &= y_i + \exp(\eta_{0_i}) e_i (\eta_{0_i} - 1) \\
+c_i &= \exp(\eta_{0_i}) e_i.
+\end{aligned}
+\label{eq:taylor_expansion}
+\end{equation}
+
+\subsection*{c (GI)}
+The full conditional density $p(\kappa_u \mid y, \kappa_v, \eta, u)$ is proportional to the full joint posterior $p(\eta, u, \kappa_u, \kappa_v \mid y)$ from exercise \emph{a)}. Dropping all terms in \eqref{eq:full_joint_posterior} not depending on $\kappa_u$ we obtain
+\begin{equation}
+p(\kappa_u \mid y, \kappa_v, \eta, u) \propto
+\kappa_u^{\frac{n-1}{2} + \alpha_u - 1}
+\exp\left(-\beta_u\kappa_u
+- \frac{\kappa_u}{2}u^TRu
+\right).
+\end{equation}
+Doing the same for $p(\kappa_v \mid y, \kappa_u, \eta, u)$ we get
+\begin{equation}
+p(\kappa_v \mid y, \kappa_u, \eta, u) \propto 
+\kappa_v^{\frac{n}{2} + \alpha_v - 1}
+\exp\left(- \beta_v\kappa_v 
+- \frac{\kappa_v}{2}\left(\eta - u\right)^T\left(\eta - u\right)
+\right).
+\end{equation}
+For $p(u \mid y, \kappa_v, \kappa_u, \eta)$ we obtain
+\begin{equation}
+\begin{aligned}
+p(u \mid y, \kappa_v, \kappa_u, \eta) & \propto
+\exp\left(
+- \frac{\kappa_v}{2}u^Tu
+- \frac{\kappa_u}{2}u^TRu
+\right) \\
+& \propto
+\exp\left(-\frac{1}{2} u^T \left(
+\kappa_v \mathbf{I} +
+\kappa_u R \right)
+u
+\right)
+\end{aligned}
+\end{equation}
+which is the well known multivariate normal distribution, with mean zero, and covariance matrix $\Sigma^{-1} = \kappa_v \mathbf{I} + \kappa_u R$.
+
+For $p(\eta \mid y, \kappa_v, \kappa_u, u)$ we get
+\begin{equation}
+\begin{aligned}
+p(\eta \mid y, \kappa_v, \kappa_u, u) & \propto
+\exp\left(
+- \frac{\kappa_v}{2}\left(\eta - u\right)^T\left(\eta - u\right)
++ \sum_i \left( \eta_i y_i - e_i \exp(\eta_i)\right)
+\right) \\
+& \propto
+\exp\left(
+- \frac{\kappa_v}{2}\eta^T\eta + \kappa_v \eta^T u
++ \eta^T y - \exp(\eta)^T e
+\right)
+\end{aligned}
+\label{eq:eta_conditional}
+\end{equation}
+We use what we got in \eqref{eq:taylor_expansion} to replace the terms $\eta^T y - \exp(\eta)^T e$ in \eqref{eq:eta_conditional}. The $a_i$ is dropped since it does not depend on $\eta$ and we get
+\begin{equation}
+\begin{aligned}
+q(\eta \mid \eta_0, y, u, \kappa_u, \kappa_v)
+& \propto \exp\left(-\frac{\kappa_v}{2}\eta^T\eta + \kappa_v \eta^Tu + \eta^T b - \frac{1}{2} \eta^T(\mathbf{I}c)\eta\right) \\
+& \propto \exp\left(-\frac{1}{2}\eta^T\left(\mathbf{I}\kappa_v + \mathbf{I}c\right)\eta + \eta^T(b + \kappa_v u)\right)
+\end{aligned}
+\label{eq:eta_conditional_approx}
+\end{equation}
+
+\subsection*{c) (BL)}
+The join conditional distribution $p(u, \eta \mid y, \kappa_u, \kappa_v)$ is also proportional to \eqref{eq:full_joint_posterior} and by removing all factors not containing $u$ or $\eta$ we obtain
+\begin{equation}
+p(u, \eta \mid y, \kappa_u, \kappa_v) \propto \exp\left(-\frac{\kappa_v}{2}(u^Tu - 2\eta^Tu + \eta^T \eta) - \frac{\kappa_u}{2}u^TRu + \eta^T y - \exp(\eta)^T e\right).
+\end{equation}
+We define $x = (u^T, \eta^T)^T$ and rewrite the previous expression as
+\begin{equation}
+p(x \mid y, \kappa_u, \kappa_v) \propto \exp\left(\eta^Ty - \exp(\eta)^Te - \frac{1}{2} x^T
+\begin{pmatrix}
+\kappa_u R + \kappa_v \mathrm{I} & -\kappa_v \mathrm{I} \\
+-\kappa_v \mathrm{I}             &  \kappa_v \mathrm{I}
+\end{pmatrix}
+x
+\right)
+\label{eq:u_eta_joint}
+\end{equation}
+Just like in \eqref{eq:eta_conditional_approx} we use what we got in \eqref{eq:taylor_expansion} to replace the terms $\eta^T y - \exp(\eta)^T e$ in \eqref{eq:u_eta_joint}. This gives
+\begin{equation}
+q(x \mid x_0, y, \kappa_u, \kappa_v) \propto \exp\left(
+- \frac{1}{2} x^T
+\begin{pmatrix}
+\kappa_u R + \kappa_v \mathrm{I} & -\kappa_v \mathrm{I} \\
+-\kappa_v \mathrm{I}             &  \kappa_v \mathrm{I}
+\end{pmatrix}
+x
+- \frac{1}{2}\eta^T (\mathrm{I}c) \eta + b^T \eta
+\right)
+\label{eq:u_eta_joint_approx}
+\end{equation}
+
+\end{document}
