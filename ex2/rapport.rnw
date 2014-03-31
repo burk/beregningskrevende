@@ -118,12 +118,14 @@ p(u \mid y, \kappa_v, \kappa_u, \eta) & \propto
 \exp\left(
 - \frac{\kappa_v}{2}u^Tu
 - \frac{\kappa_u}{2}u^TRu
++ \kappa_v \eta^T u
 \right) \\
 & \propto
 \exp\left(-\frac{1}{2} u^T \left(
 \kappa_v \mathbf{I} +
 \kappa_u R \right)
 u
++ \kappa_v \eta^T u
 \right)
 \end{aligned}
 \end{equation}
@@ -184,5 +186,41 @@ x
 \right)
 \label{eq:u_eta_joint_approx}
 \end{equation}
+
+\section*{Excercise 2}
+\subsection*{a)}
+
+<<>>=
+library(coda)
+load('gisamples.Rda');
+mku <- as.mcmc(a$ku[1:9999]);
+mkv <- as.mcmc(a$kv[1:9999]);
+#c(277, 920, 1142, 1193, 7038)
+meta <- as.mcmc(t(a$eta[2,1:9999]));
+mu <- as.mcmc(t(a$u[2,1:9999]));
+@
+\begin{figure}
+<< fig = TRUE , echo = FALSE >>=
+plot(a$kv, type="l");
+@
+\caption{Trace plot of $\kappa_v$.}
+\end{figure}
+
+\begin{figure}
+<< fig = TRUE , echo = FALSE , >>=
+par(mfrow=c(2,2));
+acf(a$kv, main="Kappa-v");
+acf(a$ku, main="Kappa-u");
+acf(a$u[10,], main="U component #10");
+acf(a$eta[10,], main="Eta component #10");
+@
+\end{figure}
+
+\begin{figure}
+<< fig = TRUE , echo = FALSE , >>=
+par(mfrow=c(2,2));
+geweke.plot(meta, order.max=2);
+@
+\end{figure}
 
 \end{document}
