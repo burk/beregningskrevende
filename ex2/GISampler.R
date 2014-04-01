@@ -60,6 +60,9 @@ GISampler <- function(R, e, y, nsamples, burnin){
     "kv"  = kv[(burnin+1):nsamples],
     "ku"  = ku[(burnin+1):nsamples],
     "u"   = u[,(burnin+1):nsamples],
-    "eta" = eta[,(burnin+1):nsamples]
+    "eta" = eta[,(burnin+1):nsamples],
+    "v"   = eta[,(burnin+1):nsamples] - u[,(burnin+1):nsamples],
+    "accepted" = accepted,
+    "rejected" = rejected
   ));
 }

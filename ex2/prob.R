@@ -1,6 +1,7 @@
 library(spam);
 library(MASS);
 
+# Calculate the log of the eta probability (proportional)
 etaProb <- function(eta, y, kv, ku, u, e) {
   eta = c(eta);
   y = c(y);
@@ -9,6 +10,7 @@ etaProb <- function(eta, y, kv, ku, u, e) {
   return(-0.5 * kv * t(eta) %*% eta + kv * t(eta) %*% u + t(eta) %*% y - t(exp(eta)) %*% e);
 }
 
+# Calculate the log of the x probability (proportional)
 xProb <- function(x, y, kv, ku, e) {
   x = c(x);
   y = c(y);
@@ -19,6 +21,7 @@ xProb <- function(x, y, kv, ku, e) {
   return(-0.5 * t(x) %*% Q %*% x + t(x) %*% c(rep(0,n), y) - exp(x) %*% c(rep(0,n), e));
 }
 
+# x log proposal density (proportional)
 xQ <- function(x, x0, y, kv, ku, e) {
   x = c(x);
   y = c(y);
@@ -36,10 +39,9 @@ xQ <- function(x, x0, y, kv, ku, e) {
   Q <- Q + diagC;
   
   return(dmvnorm.canonical(x, L, Q, log=TRUE));
-  
-  #return(-0.5 * t(eta) %*% (diag(kv + cv)) %*% eta + t(eta) %*% (kv * u + b));
 }
 
+# eta log proposal density (proportional)
 etaQ <- function(eta, eta0, y, kv, ku, u, e) {
   eta0 = c(eta0);
   eta = c(eta);
@@ -52,8 +54,6 @@ etaQ <- function(eta, eta0, y, kv, ku, u, e) {
   Q <- diag.spam(kv + c(cv));
   
   return(dmvnorm.canonical(eta, L, Q, log=TRUE));
-  
-  #return(-0.5 * t(eta) %*% (diag(kv + cv)) %*% eta + t(eta) %*% (kv * u + b));
 }
 
 ## Function for the density function of a multivariate normal distribution

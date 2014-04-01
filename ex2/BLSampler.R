@@ -54,6 +54,9 @@ BLSampler <- function(R, e, y, nsamples, burnin){
   return(list(
     "kv" = kv[(burnin+1):nsamples],
     "ku" = ku[(burnin+1):nsamples],
-    "x"  = x[,(burnin+1):nsamples]
+    "x"  = x[,(burnin+1):nsamples],
+    "u"  = x[1:544,(burnin+1):nsamples],
+    "eta"= x[545:1088,(burnin+1):nsamples],
+    "v"  = x[545:1088,(burnin+1):nsamples] - x[1:544,(burnin+1):nsamples]
   ));
 }

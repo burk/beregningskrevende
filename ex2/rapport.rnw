@@ -1,31 +1,19 @@
 \documentclass[a4paper]{article}
 
+\usepackage[utf8]{inputenc}
 \usepackage{fullpage}
 \usepackage{amsmath}
 
+\title{TMA 4300 -- Computer Intensive Statistical Methods\\
+Exercise 2}
+\author{Bjørn Rustad, 707765}
+\date{\today}
+
 \begin{document}
 
-%<<my-label, eval=TRUE, dev='png'>>=
-%library(spam) # load the data
-%str(Oral) # see structure of data
-%#'data.frame': 544 obs. of 3 variables:
-%# $ Y : int 18 62 44 12 18 27 20 29 39 21 . . .
-%# $ E : num 16.4 45.9 44.7 16.3 26.9 . . .
-%# $ SMR: num 1.101 1.351 0.985 0.735 0.668 . . .
-%attach(Oral) # allow direct referencing to Y and E
-%# generate some plots
-%library(fields, warn.conflict=FALSE)
-%library(colorspace)
-%col <- diverge_hcl(8) # blue - red
-%# alternative colors
-%# col <- rev(gray(0:8 / 8)) # gray scales
-%# col <- rev(heat_hcl(64))
-%# use the function provided by spam
-%map.landkreis(log(Oral$Y),col=col)
-%map.landkreis(Oral$Y/Oral$E,col=col)
-%@
+\maketitle
 
-\section*{Excercise 1}
+\section*{Exercise 1}
 \subsection*{a)}
 We want to find the full posterior distribution $p\left(\eta, u, \kappa_u, \kappa_v \mid y\right)$, using the following
 \begin{align}
@@ -187,40 +175,510 @@ x
 \label{eq:u_eta_joint_approx}
 \end{equation}
 
-\section*{Excercise 2}
-\subsection*{a)}
+\section*{Exercise 2}
+\subsection*{(GI)}
+As the full conditional of $\kappa_u$ is a standard gamma-distribution, drawing $\kappa_u$ is done using the built-in \emph{rgamma}, making sure to use the rate parameter.
+<<>>=
+# Draw kappa_u from the full conditional
+drawku <- function(au, bu, u, R){
+  u = c(u);
+  
+  n <- dim(R)[1];
+  
+  # Calculate parameters of the gamma distribution
+  alpha <- (n-1) / 2 + au;
+  # Rate parameter!
+  beta  <- bu + t(u) %*% R %*% u / 2;
+  return(rgamma(1, alpha, rate = beta));
+}
+@
+The $\kappa_v$ parameter is drawn similarly.
+<<>>=
+# Draw kappa_v from the full conditional
+drawkv <- function(av, bv, u, eta, R) {
+  u = c(u);
+  eta = c(eta);
+  
+  n <- dim(R)[1];
+  alpha <- n / 2 + av;
+  beta  <- bv + t(eta - u) %*% (eta - u) / 2;
+  return(rgamma(1, alpha, rate = beta));
+}
+@
+The $u$ is then drawn from a multivariate normal distribution on canonical form as follows
+<<>>=
+# Draw a sample from the full conditional for u
+drawu <- function(ku, kv, eta, R){
+  eta = c(eta);
+  
+  n <- dim(R)[1];
+  L <- kv * eta;
+  Q <- diag(kv, n) + ku * R;
+  
+  return(c(t(rmvnorm.canonical(n = 1, L, Q, memory=list(nnzcolindices=6467)))));
+}
+@
+Now $\eta^*$ is drawn from the proposal distribution, which also is a normal distribution on canonical form.
+<<>>=
+# Draw from the proposal distribution of eta
+draweta <- function(eta0, e, y, u, kv) {
+  eta0 = c(eta0);
+  e = c(e);
+  y = c(y);
+  u = c(u);
+  
+  cv <- e * exp(eta0);
+  b <- y + e * exp(eta0) * (eta0 - 1);
+  L <- b + kv * u;
+  Q <- diag.spam(kv + cv);
+  return(c(t(rmvnorm.canonical(n = 1, L, Q, memory=list(nnzcolindices=6467)))));
+}
+@
+These draws are all combined in the following function implementing the Gibbs sampler
+<<tidy=FALSE>>=
+GISampler <- function(R, e, y, nsamples, burnin){
+  nsamples <- nsamples + burnin;
+  
+  accepted <- 0;
+  rejected <- 0;
+  n  <- dim(R)[1];
+  au <- 1;
+  av <- 1;
+  bu <- 0.01;
+  bv <- 0.01;
+  
+  ku <- matrix(nrow = 1, ncol = nsamples);
+  kv <- matrix(nrow = 1, ncol = nsamples);
+  
+  u   <- matrix(data=1, nrow = n, ncol = nsamples);
+  eta <- matrix(data=1, nrow = n, ncol = nsamples);
+  
+  ku[,1]  <- 20;
+  kv[,1]  <- 400;
+  u[,1]   <- 0;
+  eta[,1] <- 1;
 
+  for(i in 2:nsamples) {
+    ku[,i] <- drawku(au, bu, u[,i-1], R);
+    kv[,i] <- drawkv(av, bv, u[,i-1], eta[,i-1], R);
+    u[,i]  <- drawu(ku[,i], kv[,i], eta[,i-1], R);
+    etatmp <- draweta(eta[,i-1], e, y, u[,i], kv[,i]);
+    
+    #print(etatmp);
+    
+    alpha <- min(0,
+                + etaProb(etatmp, y, kv[,i], ku[,i], u[,i], e)
+                - etaProb(eta[,i-1], y, kv[,i], ku[,i], u[,i], e)
+                + etaQ(eta[,i-1], etatmp, y, kv[,i], ku[,i], u[,i], e)
+                - etaQ(etatmp, eta[,i-1], y, kv[,i], ku[,i], u[,i], e)
+    );
+    
+    #print(alpha);
+    
+    print(i);
+    if (runif(1) < exp(alpha)) {
+      print("ACCEPT");
+      accepted <- accepted + 1;
+      eta[,i] <- etatmp;
+    }
+    else {
+      print("REJECT");
+      rejected <- rejected + 1;
+      eta[,i] <- eta[,i-1];
+    }
+  }
+  
+  cat("TOTAL ACCEPTED:", accepted, " (burnin:", burnin, ")\n");
+  cat("TOTAL REJECTED:", rejected, "\n");
+  
+  return(list(
+    "kv"  = kv[(burnin+1):nsamples],
+    "ku"  = ku[(burnin+1):nsamples],
+    "u"   = u[,(burnin+1):nsamples],
+    "eta" = eta[,(burnin+1):nsamples],
+    "v"   = eta[,(burnin+1):nsamples] - u[,(burnin+1):nsamples],
+    "accepted" = accepted,
+    "rejected" = rejected
+  ));
+}
+@
+The acceptance probability is calculated using the following two functions implementing the density functions:
+<<tidy=FALSE>>=
+# Calculate the log of the eta probability (proportional)
+etaProb <- function(eta, y, kv, ku, u, e) {
+  eta = c(eta);
+  y = c(y);
+  n = length(eta);
+  
+  return(-0.5 * kv * t(eta) %*% eta
+         + kv * t(eta) %*% u + t(eta) %*% y
+         - t(exp(eta)) %*% e);
+}
+
+# eta log proposal density (proportional)
+etaQ <- function(eta, eta0, y, kv, ku, u, e) {
+  eta0 = c(eta0);
+  eta = c(eta);
+  u = c(u);
+  y = c(y)
+  
+  cv <- e * exp(eta0);
+  b <- y + e * exp(eta0) * (eta0 - 1);
+  L <- b + kv * u;
+  Q <- diag.spam(kv + c(cv));
+  
+  return(dmvnorm.canonical(eta, L, Q, log=TRUE));
+}
+@
+\subsection*{(BL)}
+For the block sampler, we can sample from the same $\kappa_u$ and $\kappa_v$ distribution, but we need a function for drawing from the distribution of the block $x$. First we implement a function for creating the block matrix in \eqref{eq:u_eta_joint_approx}.
+<<>>=
+# Create the block matrix appearing in the full conditional of x.
+# Note that before usage in the proposal distribution, the c-vector has to be
+# added to the diagonal in the lower right block.
+blockMatrix <- function(kv, ku, R) {
+  n <- dim(R)[1];
+  
+  ## Enlarge the dimension, now R is (automatically) only in the
+  ## upper left block while the other blocks contain zeros
+  Q1 <- R;
+  dim(Q1) <- c(2*n, 2*n);
+  
+  ## Combine different diag matrices
+  Q2 <- rbind(cbind(diag.spam(n), -diag.spam(n)), cbind(-diag.spam(n), diag.spam(n)));
+   
+  Q <- ku * Q1 + kv * Q2;
+
+  return(Q);
+}
+@
+This is then used in the new draw-function for drawing from the proposal density of $x$, which we do as follows:
+<<>>=
+# Draw from the full conditional of x = u, eta
+drawx <- function(x0, e, y, kv, ku) {
+  n = length(e);
+  
+  x0 = c(x0);
+  eta0 = x0[(length(x0)/2+1):length(x0)];
+  
+  e = c(e);
+  y = c(y);
+  
+  cv <- e * exp(eta0);
+  b <- y + e * exp(eta0) * (eta0 - 1);
+  
+  # Create block matrix and add the c-vector
+  Q <- blockMatrix(kv, ku, R);
+  diagC <- diag.spam(c(rep(0, n), cv));
+  Q <- Q + diagC;
+  
+  b <- c(rep(0, n), b);
+  
+  return(c(t(rmvnorm.canonical(n = 1, b, Q, memory=list(nnzcolindices=6467)))));
+}
+@
+The acceptance probability is calculated using the following two functions:
+<<tidy=FALSE>>=
+# Calculate the log of the x probability (proportional)
+xProb <- function(x, y, kv, ku, e) {
+  x = c(x);
+  y = c(y);
+  n = length(x) / 2;
+  
+  Q <- blockMatrix(kv, ku, R);
+  
+  return(-0.5 * t(x) %*% Q %*% x
+         + t(x) %*% c(rep(0,n), y)
+         - exp(x) %*% c(rep(0,n), e));
+}
+
+# x log proposal density (proportional)
+xQ <- function(x, x0, y, kv, ku, e) {
+  x = c(x);
+  y = c(y);
+  n = length(x) / 2;
+  
+  Q <- blockMatrix(kv, ku, R);
+  
+  eta0 = x0[(length(x0)/2+1):length(x0)];
+  cv <- e * exp(eta0);
+  b  <- y + e * exp(eta0) * (eta0 - 1);
+  
+  L <- c(rep(0, n), b);
+  
+  diagC <- diag.spam(c(rep(0, n), cv));
+  Q <- Q + diagC;
+  
+  return(dmvnorm.canonical(x, L, Q, log=TRUE));
+}
+@
+
+\section*{Exercise 3}
+\subsection*{a) (GI)}
+As there are a lot of plots, I will comment shortly on them in the caption, instead of in the text. First come all the plots from the Gibbs sampler, and then follows the block sampler. For both samplers, 10 000 samples are loaded. They were created with the \emph{GISampler} and \emph{BLSampler} functions. A burnin of 1 000 samples was used, but no thinning. We can see from the autocorrelation plots and effective sample size (later) that thinning might be a good idea.
 <<>>=
 library(coda)
 load('gisamples.Rda');
-mku <- as.mcmc(a$ku[1:9999]);
-mkv <- as.mcmc(a$kv[1:9999]);
-#c(277, 920, 1142, 1193, 7038)
-meta <- as.mcmc(t(a$eta[2,1:9999]));
-mu <- as.mcmc(t(a$u[2,1:9999]));
+mku <- mcmc(a$ku[1:9999]);
+mkv <- mcmc(a$kv[1:9999]);
+mu <- mcmc(t(a$u[c(281,318,322,406,516),1:9999]));
+mv <- mcmc(t(a$v[c(281,318,322,406,516),1:9999]));
 @
 \begin{figure}
-<< fig = TRUE , echo = FALSE >>=
+<< fig = TRUE , echo = FALSE , fig.height=3, >>=
+plot(a$ku, type="l");
+@
+\caption{(GI) Trace plot of $\kappa_u$. Even though we have traced all the 10 000 samples, we can see patterns in the trace, and that it does not very quickly cover the whole sample space.}
+\end{figure}
+
+\begin{figure}
+<< fig = TRUE , echo = FALSE , fig.height=3, >>=
 plot(a$kv, type="l");
 @
-\caption{Trace plot of $\kappa_v$.}
+\caption{(GI) Trace plot of $\kappa_v$. It looks even worse than the trace plot of $\kappa_u$, with even less randomness. Throughout the 10 000 samples it does not cover the sample space a lot of times.}
 \end{figure}
 
 \begin{figure}
-<< fig = TRUE , echo = FALSE , >>=
-par(mfrow=c(2,2));
-acf(a$kv, main="Kappa-v");
+<< fig = TRUE , echo = FALSE >>=
+par(mfrow=c(3,2));
+for (i in c(281,318,322,406,516)) {
+  plot(a$u[i,], type="l", main=i);
+}
+@
+\caption{(GI) Trace plot of $u$. For space reasons we have zoomed out a bit. The traces look more random, and seem better, than the $\kappa$ parameters.}
+\end{figure}
+
+\begin{figure}
+<< fig = TRUE , echo = FALSE >>=
+par(mfrow=c(3,2));
+for (i in c(281,318,322,406,516)) {
+  plot(a$v[i,], type="l", main=i);
+}
+@
+\caption{(GI) Trace plot of $v$. As for $u$ it looks good, with a lot of randomness, covering the samplespace well in the 10 000 samples.}
+\end{figure}
+
+\begin{figure}
+<< fig = TRUE , echo = FALSE , fig.height=3, >>=
+par(mfrow=c(1,2));
 acf(a$ku, main="Kappa-u");
-acf(a$u[10,], main="U component #10");
-acf(a$eta[10,], main="Eta component #10");
+acf(a$kv, main="Kappa-v");
 @
+\caption{A lot of lag in the samples of the $\kappa$ parameters. Thinning would have helped here.}
 \end{figure}
 
 \begin{figure}
 << fig = TRUE , echo = FALSE , >>=
-par(mfrow=c(2,2));
-geweke.plot(meta, order.max=2);
+par(mfrow=c(3,2));
+for (i in c(281,318,322,406,516)) {
+  acf(a$u[i,], main=c("U component", toString(i)));
+}
 @
+\caption{(GI) Autocorrelation plots for the different randomly chosen $u$ components. With a gap of between 10 to 30 samples, it can not find any correlation any more.}
+\end{figure}
+\begin{figure}
+<< fig = TRUE , echo = FALSE , >>=
+par(mfrow=c(3,2));
+for (i in c(281,318,322,406,516)) {
+  acf(a$v[i,], main=c("V component", toString(i)));
+}
+@
+\caption{(GI) Autocorrelation plots for the different randomly chosen $v$ components. Almost no lag, as is expected for the parameter which models white noise.}
+\end{figure}
+
+\begin{figure}
+<< fig = TRUE , echo = FALSE , >>=
+#par(mfrow=c(1,1));
+geweke.plot(mu);
+@
+\caption{(GI) Geweke plot of the $u$ parameter. Most of the points stay inside the dashed Z boundaries, indicating that the chain has converged.}
+\end{figure}
+
+\begin{figure}
+<< fig = TRUE , echo = FALSE , >>=
+par(mfrow=c(1,1));
+geweke.plot(mv);
+@
+\caption{(GI) Geweke plot of the $v$ parameter. Does not look as good as for the $u$ parameter, but still not too bad.}
+\end{figure}
+
+\subsection*{(BL)}
+As for the Gibbs sampler we load the 10 000 stored samples, which were made using a burnin of 1 000 samples. Comments are in plot captions.
+<<>>=
+library(coda)
+load('blsamples.Rda');
+mku <- mcmc(b$ku[1:9999]);
+mkv <- mcmc(b$kv[1:9999]);
+mu <- mcmc(t(b$u[c(281,318,322,406,516),1:9999]));
+mv <- mcmc(t(b$v[c(281,318,322,406,516),1:9999]));
+@
+\begin{figure}
+<< fig = TRUE , echo = FALSE , fig.height=3, >>=
+plot(b$ku, type="l");
+@
+\caption{(BL) A trace plot of the $\kappa_u$ parameter. It does not look very random, and there are obvious patterns giving a long lag, and big dependence on previous samples.}
+\end{figure}
+
+\begin{figure}
+<< fig = TRUE , echo = FALSE , fig.height=3, >>=
+plot(b$kv, type="l");
+@
+\caption{(BL) A trace plot of the $\kappa_v$ parameter. Even worse than the $\kappa_v$ trace, and much worse than for the Gibbs sampler. Crosses over the sample space only a few times.}
+\end{figure}
+
+\begin{figure}
+<< fig = TRUE , echo = FALSE >>=
+par(mfrow=c(3,2));
+for (i in c(281,318,322,406,516)) {
+  plot(b$u[i,], type="l", main=i);
+}
+@
+\caption{(BL) Trace plots for five random components of the $u$ parameter. We can see times where the sampler has spent many rounds before accepting a new value, indicating a too low acceptance ratio, and giving lag.}
+\end{figure}
+
+\begin{figure}
+<< fig = TRUE , echo = FALSE >>=
+par(mfrow=c(3,2));
+for (i in c(281,318,322,406,516)) {
+  plot(b$v[i,], type="l", main=i);
+}
+@
+\caption{(BL) Trace plots for five random components of the $v$ parameter. Much the same as for the $u$ parameters, we can see that at times it takes many rounds before accepting a new value.}
+\end{figure}
+
+\begin{figure}
+<< fig = TRUE , echo = FALSE , fig.height=3, >>=
+par(mfrow=c(1,2));
+acf(b$ku, main="Kappa-u");
+acf(b$kv, main="Kappa-v");
+@
+\caption{(BL) Auto correlation plots for the $\kappa_u$ and $\kappa_v$ parameters. \emph{A lot} of lag for these parameters, which is not very good.}
+\end{figure}
+
+\begin{figure}
+<< fig = TRUE , echo = FALSE , >>=
+par(mfrow=c(3,2));
+for (i in c(281,318,322,406,516)) {
+  acf(b$u[i,], main=c("U component", toString(i)));
+}
+@
+\caption{(BL) Auto correlation plots for five randomly chosen components of the $u$ parameter. The lag doesn't look too bad. Thinning would have helped here. But of course, even lower lag here would improve the lag of the $\kappa$ parameters.}
+\end{figure}
+\begin{figure}
+<< fig = TRUE , echo = FALSE , >>=
+par(mfrow=c(3,2));
+for (i in c(281,318,322,406,516)) {
+  acf(b$v[i,], main=c("V component", toString(i)));
+}
+@
+\caption{(BL) Auto correlation plots for five randomly chosen components of the $v$ parameter. Much the same as for the $u$ parameter.}
+\end{figure}
+
+\begin{figure}
+<< fig = TRUE , echo = FALSE , >>=
+#par(mfrow=c(1,1));
+geweke.plot(mu);
+@
+\caption{(BL) Geweke plot of the $u$ parameter.}
+\end{figure}
+
+\begin{figure}
+<< fig = TRUE , echo = FALSE , >>=
+par(mfrow=c(1,1));
+geweke.plot(mv);
+@
+\caption{(BL) Geweke plot of the $v$ parameter.}
+\end{figure}
+
+\clearpage
+\section*{Exercise 4)}
+\begin{table}
+\centering
+\caption{Effective sample size for the two samplers}
+\begin{tabular}{cccc}
+\hline
+ & ESS $\kappa_u$ & ESS $\kappa_v$ & $\kappa_u$ ESS \\
+\hline
+Gibbs & 143.84 & 116.4 & 0.2527  \\
+Block & 53.3 & 15.3 & 0.1313
+\end{tabular}
+\label{tab:ess}
+\end{table}
+Table \ref{tab:ess} shows the effective sample size of the two samplers calculated as follows
+<<>>=
+source('ess.R');
+ess(as.mcmc(a$ku), 10000)
+ess(as.mcmc(a$kv), 10000)
+@
+and similarly for the block sampler. We see that the block sampler performs much worse as it is.
+
+\section*{Exercise 5}
+The performance of the block sampler is not good. The acceptance rate is too low, and this leads to the lag being high, and the effective sample size being very low. The theory of what the acceptance rate should be is complicated, and there is no single correct answer, but a number in the range 40\% to 60\% is normally good.
+
+The only thing we can change is the proposal distribution. One possibility is to introduce a tuning parameter. This would control the flatness of the multivariate normal distribution we draw from, and in turn control the extremeness of the proposals. If the proposals are less extreme, we accept more of them.
+
+\section*{Exercise 6}
+We run the INLA algorithm as follows
+<<tidy=FALSE>>=
+library(INLA)
+library(spam) # load the data
+str(Oral) # see structure of data
+
+attach(Oral) # allow direct referencing to Y and E
+# generate some plots
+
+data(Germany);
+
+g <- system.file("demodata/germany.graph", package="INLA");
+source(system.file("demodata/Bym-map.R", package="INLA"));
+
+Oral <- cbind(Oral,region.struct=1:544, region=1:544);
+
+formula <- Y ~ f(
+    region.struct, model="besag", graph=g,
+    hyper=list(prec=list(param=c(1,0.01))), constr=F) +
+  f(
+    region, model="iid",
+    hyper=list(prec=list(param=c(1,0.01)))) - 1
+
+Germany = cbind(Germany, region.struct=Germany$region);
+
+result = inla(formula, family="poisson", data=Germany, E=E);
+
+#Bym.map(result$summary.random$region.struct$mean)
+@
+We compare the marginals by looking at the figures, and by running:
+<<>>=
+summary(result);
+summary(a$ku);
+summary(a$kv);
+@
+\begin{figure}[ht]
+\centering
+\includegraphics[width=0.6\textwidth]{INLASUGER.pdf}
+\caption{INLA posterior marginals for $\kappa_u$ and $\kappa_v$.}
+\end{figure}
+
+\begin{figure}[hb]
+<< fig = TRUE , echo = FALSE , fig.height=4>>=
+par(mfrow=c(2,2))
+hist(a$ku, 70, main="GI Kappa-u");
+hist(b$ku, 70, main="BL Kappa-u");
+hist(a$kv, 70, main="GI Kappa-v");
+hist(b$kv, 70, main="BL Kappa-v");
+@
+\caption{Histograms of the $\kappa_u$ and $\kappa_v$ parameters, which at first glance looks similar to the posterior marginals produced by INLA.}
+\end{figure}
+
+\begin{figure}
+<< fig = TRUE , echo = FALSE , >>=
+library(fields, warn.conflict=FALSE)
+library(colorspace)
+col <- diverge_hcl(8) # blue - red
+
+map.landkreis(apply(a$u, 1, median), col=col);
+@
+\caption{A plot of the median of $u$ obtained in the Gibbs sampler. First thing to notice is that our spatially structured parameter $u$ actually is spatially structured, across region borders, which is good. It seems to somehow fit together with the picture of the observed counts.}
 \end{figure}
 
 \end{document}
