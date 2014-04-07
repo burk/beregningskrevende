@@ -1,5 +1,9 @@
 # History files
 .Rhistory
+.RData
+
+ex2/blsamples.Rda
+ex2/gisamples.Rda
 
 # Example code in package build process
 *-Ex.R
