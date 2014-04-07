@@ -1,0 +1,115 @@
+\documentclass[a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage{fullpage}
+\usepackage{amsmath}
+
+\title{TMA 4300 -- Computer Intensive Statistical Methods\\
+Exercise 3}
+\author{Bjørn Rustad, 707765}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section*{Problem A}
+
+<<tidy=FALSE>>=
+library(rpart)
+library(MASS)
+data(kyphosis)
+@
+
+\subsection*{(1)}
+<<tidy=FALSE>>=
+lfit <- lda(Kyphosis ~ Age + Number + Start, kyphosis)
+@
+
+<<tidy=FALSE>>=
+for (i in 1:nrow(kyphosis)) {
+  cat("REAL:", kyphosis[i,]$Kyphosis[1])
+  cat(" PREDICT:", predict(lfit, kyphosis[i,])$class[1], "\n")
+}
+@
+
+<<tidy=FALSE>>=
+qfit <- qda(Kyphosis ~ Age + Number + Start, kyphosis)
+@
+
+<<tidy=FALSE>>=
+for (i in 1:nrow(kyphosis)) {
+  cat("REAL:", kyphosis[i,]$Kyphosis[1])
+  cat(" PREDICT:", predict(qfit, kyphosis[i,])$class[1], "\n")
+}
+@
+
+\subsection*{(2)}
+<<tidy=FALSE>>=
+library(class)
+@
+
+<<tidy=FALSE>>=
+kfit <- knn(train=kyphosis[2:4], test=kyphosis[2:4], cl=kyphosis$Kyphosis, k = 1)
+print(kyphosis$Kyphosis)
+print(kfit)
+@
+
+\section*{Problem B}
+<<tidy=FALSE>>=
+source('probBhelp.R')
+source('probBdata.R')
+@
+
+<<tidy=FALSE>>=
+afit <- ARp.beta.est(data3A$x, 2)
+@
+
+<<tidy=FALSE>>=
+afit$LSe <- ARp.resid(data3A$x, afit$LS)
+afit$LAe <- ARp.resid(data3A$x, afit$LA)
+@
+
+\section*{Problem C}
+\subsection*{(1)}
+
+<<tidy=FALSE>>=
+bilirubin <- read.table("bilirubin.txt", header=T)
+@
+
+<<boxplot, fig.cap='BOXPLOT', cache=TRUE, eval=TRUE, echo=TRUE, fig.height=4>>=
+boxplot(log(meas) ~ pers, data=bilirubin)
+@
+
+We see that \ref{fig:boxplot} is a boxplot.
+
+\subsection*{(2)}
+
+Linear Model.
+
+\subsection*{(3)}
+
+<<tidy=FALSE>>=
+permTest <- function() {
+  
+}
+@
+
+\subsection*{(4)}
+
+Permutation test.
+
+\section*{Problem D}
+
+EM Algorithm.
+
+\subsection*{(1)}
+<<tidy=FALSE>>=
+# IMPUTE
+@
+
+\subsection*{(2)}
+
+PLOT.
+
+\end{document}
