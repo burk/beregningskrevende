@@ -27,10 +27,34 @@ lfit <- lda(Kyphosis ~ Age + Number + Start, kyphosis)
 @
 
 <<tidy=FALSE>>=
-for (i in 1:nrow(kyphosis)) {
-  cat("REAL:", kyphosis[i,]$Kyphosis[1])
-  cat(" PREDICT:", predict(lfit, kyphosis[i,])$class[1], "\n")
+cv <- function(da, f, data, k) {
+  # Calculate the number of groups
+  groups <- ceiling(nrow(data) / k)
+
+  miss <- 0
+  # Loop through the groups
+  for (i in 1:groups) {
+    # Indices of all the members of the current group
+    ind  <- (i * 10 - 9):min((i * 10), nrow(data))
+
+    # Create the LDA model using all data except the data in the group
+    lfit <- da(f, data[-1 * ind,]);
+    
+    # Predict values for the group members
+    for (i in ind) {
+      # FIXME: do not refer to Kyphosis here
+      if (with(data[i,], get(toString(f[2]))) != predict(lfit, data[i,])$class[1]) {
+        miss <- miss + 1
+      }
+    }
+  }
+  
+  return(miss / nrow(data))
 }
+@
+
+<<tidy=FALSE>>=
+cv(lda, Kyphosis ~ Age + Number + Start, kyphosis, 10)
 @
 
 <<tidy=FALSE>>=
@@ -38,21 +62,73 @@ qfit <- qda(Kyphosis ~ Age + Number + Start, kyphosis)
 @
 
 <<tidy=FALSE>>=
-for (i in 1:nrow(kyphosis)) {
-  cat("REAL:", kyphosis[i,]$Kyphosis[1])
-  cat(" PREDICT:", predict(qfit, kyphosis[i,])$class[1], "\n")
-}
+cv(qda, Kyphosis ~ Age + Number + Start, kyphosis, 10)
 @
+
+%<<tidy=FALSE>>=
+%for (i in 1:nrow(kyphosis)) {
+%  cat("REAL:", kyphosis[i,]$Kyphosis[1])
+%  cat(" PREDICT:", predict(lfit, kyphosis[i,])$class[1], "\n")
+%}
+%@
+
+%<<tidy=FALSE>>=
+%for (i in 1:nrow(kyphosis)) {
+%  cat("REAL:", kyphosis[i,]$Kyphosis[1])
+%  cat(" PREDICT:", predict(qfit, kyphosis[i,])$class[1], "\n")
+%}
+%@
 
 \subsection*{(2)}
 <<tidy=FALSE>>=
 library(class)
 @
 
+%<<tidy=FALSE>>=
+%kfit <- knn(train=kyphosis[2:4], test=kyphosis[2:4], cl=kyphosis$Kyphosis, k = 1)
+%print(kyphosis$Kyphosis)
+%print(kfit)
+%@
+
 <<tidy=FALSE>>=
-kfit <- knn(train=kyphosis[2:4], test=kyphosis[2:4], cl=kyphosis$Kyphosis, k = 1)
-print(kyphosis$Kyphosis)
-print(kfit)
+knncv <- function(data, cl, k, groupsize) {
+  # Calculate the number of groups
+  groups <- ceiling(nrow(data) / groupsize)
+
+  miss <- 0
+  # Loop through the groups
+  for (i in 1:groups) {
+    # Indices of all the members of the current group
+    ind  <- (i * 10 - 9):min((i * 10), nrow(data))
+
+    # Obtain the knn predictions for the test set
+    kfit <- knn(train = data[-1 * ind,], test = data[ind,], cl = cl[-1 * ind], k = k)
+
+    # Count the errors
+    correct = cl[ind]
+    for (i in 1:length(kfit)) {
+      if (kfit[i] != correct[i]) {
+        miss <- miss + 1
+      }
+    }
+  }
+  
+  return(miss / nrow(data))
+}
+@
+
+<<tidy=FALSE>>=
+best<- 1
+for (k in 1:60) {
+  res <- knncv(kyphosis[,2:4], kyphosis[,1], k, 10)
+  if (res < best) {
+    kbest <- k
+    best  <- res
+  }
+}
+
+print(kbest)
+print(best)
 @
 
 \section*{Problem B}
@@ -66,12 +142,93 @@ afit <- ARp.beta.est(data3A$x, 2)
 @
 
 <<tidy=FALSE>>=
+# The length of the residual vector is maybe 2 elements too short?
 afit$LSe <- ARp.resid(data3A$x, afit$LS)
 afit$LAe <- ARp.resid(data3A$x, afit$LA)
 @
 
+<<tidy=FALSE>>=
+boot <- function(eobs, beta, n, field) {
+  res <- matrix(data=NA, nrow=n, ncol=2)
+  
+  for (i in 1:n) {
+    e <- sample(eobs, size=length(eobs), replace=TRUE)
+    
+    x0start <- sample(1:(length(eobs)-1), 1)
+    x0 <- eobs[x0start:(x0start+1)]
+    
+    x <- ARp.filter(x0, beta, e)
+
+    res[i,] <- with(ARp.beta.est(x, 2), get(field))
+  }
+  
+  return(res)
+}
+@
+
+<<tidy=FALSE>>=
+LSboot <- boot(afit$LSe, afit$LS, 1500, "LS")
+LAboot <- boot(afit$LAe, afit$LA, 1500, "LA")
+@
+
+<<lsboot, fig.cap='LSBOOT', cache=TRUE, eval=TRUE, echo=TRUE, fig.height=4>>=
+par(mfrow=c(1,2))
+hist(LSboot[,1], 40)
+hist(LSboot[,2], 40)
+@
+
+<<laboot, fig.cap='LSBOOT', cache=TRUE, eval=TRUE, echo=TRUE, fig.height=4>>=
+par(mfrow=c(1,2))
+hist(LAboot[,1], 40)
+hist(LAboot[,2], 40)
+@
+
+Variance:
+<<tidy=FALSE>>=
+var(LSboot[,1])
+var(LSboot[,2])
+var(LAboot[,1])
+var(LAboot[,2])
+@
+
+Bias:
+<<tidy=FALSE>>=
+mean(LSboot[,1]) - afit$LS[1]
+mean(LSboot[,2]) - afit$LS[2]
+mean(LAboot[,1]) - afit$LA[1]
+mean(LAboot[,2]) - afit$LA[2]
+@
+
+<<tidy=FALSE>>=
+x99  <- data3A$x[99]
+x100 <- data3A$x[100]
+x101 <- rep(0, nrow(LSboot))
+for (i in 1:nrow(LSboot)) {
+  x101[i] <- LSboot[i, 1] * x100 + LSboot[i, 2] * x99 + sample(afit$LSe, 1)
+}
+@
+
+<<lsx101, fig.cap='LS $x_{101}$', cache=TRUE, eval=TRUE, echo=TRUE, fig.height=4>>=
+hist(x101, 50)
+@
+
+<<tidy=FALSE>>=
+x99  <- data3A$x[99]
+x100 <- data3A$x[100]
+x101 <- rep(0, nrow(LAboot))
+for (i in 1:nrow(LAboot)) {
+  x101[i] <- LAboot[i, 1] * x100 + LAboot[i, 2] * x99 + sample(afit$LAe, 1)
+}
+@
+
+<<lax101, fig.cap='LA $x_{101}$', cache=TRUE, eval=TRUE, echo=TRUE, fig.height=4>>=
+hist(x101, 50)
+@
+
+Quantile based prediction interval?
+
 \section*{Problem C}
-\subsection*{(1)}
+\subsection*{(1) Boxplot}
 
 <<tidy=FALSE>>=
 bilirubin <- read.table("bilirubin.txt", header=T)
@@ -83,21 +240,41 @@ boxplot(log(meas) ~ pers, data=bilirubin)
 
 We see that \ref{fig:boxplot} is a boxplot.
 
-\subsection*{(2)}
+\subsection*{(2) Linear model}
 
 Linear Model.
+<<tidy=FALSE>>=
+fit <- lm(log(meas) ~ pers - 1, bilirubin)
+summary(fit)
+Fval <- summary(fit)$fstatistic[1]
+@
 
-\subsection*{(3)}
+\subsection*{(3) \emph{permTest()}}
 
 <<tidy=FALSE>>=
-permTest <- function() {
-  
+permTest <- function(billy) {
+  billy$meas <- sample(billy$meas)
+  lfit <- lm(log(meas) ~ pers - 1, billy)
+  return(summary(lfit)$fstatistic[1])
 }
 @
 
-\subsection*{(4)}
+\subsection*{(4) Permutation test}
 
-Permutation test.
+<<tidy=FALSE>>=
+Fs <- rep(NA, 999)
+for (i in 1:999) {
+  Fs[i] <- permTest(bilirubin)
+}
+@
+
+<<fhist, fig.cap='FHIST', cache=TRUE, eval=TRUE, echo=TRUE, fig.height=4>>=
+hist(Fs, 50)
+@
+
+<<tidy=FALSE>>=
+length(Fs[Fs > Fval]) / length(Fs)
+@
 
 \section*{Problem D}
 
@@ -105,7 +282,17 @@ EM Algorithm.
 
 \subsection*{(1)}
 <<tidy=FALSE>>=
-# IMPUTE
+df <- data.frame(
+  y=c(5, 8, 7, 10, NA, 12),
+  rw=as.factor(c(1,1,1,2,2,2)),
+  cl=as.factor(c(1,2,3,1,2,3))
+  )
+
+for (i in 1:10) {
+  fit <- lm(y ~ rw + cl - 1, df)
+  df[5,1] <- predict(fit, data.frame(rw=as.factor(2), cl=as.factor(2)))
+  print(df)
+}
 @
 
 \subsection*{(2)}
