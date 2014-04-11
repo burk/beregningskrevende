@@ -15,6 +15,7 @@ Exercise 3}
 
 \section*{Problem A}
 
+We start by loading the needed libraries and data.
 <<tidy=FALSE>>=
 library(rpart)
 library(MASS)
@@ -22,11 +23,18 @@ data(kyphosis)
 @
 
 \subsection*{(1)}
+A linear discriminant model is fitted using the \texttt{lda()} function. In the formula we specify that the \texttt{Kyphosis} indicator should be predicted using the \texttt{Age}, \texttt{Number} and \texttt{Start} variables.
 <<tidy=FALSE>>=
 lfit <- lda(Kyphosis ~ Age + Number + Start, kyphosis)
 @
 
+The folloving function performs $k$-fold cross validation on a discriminant model, either of the linear or quadratic type.
 <<tidy=FALSE>>=
+# K-fold cross validation
+# - da:   function returning a discriminant model (e.g. lda or qda)
+# - f:    formula to be used in model
+# - data: data table
+# - k:    approximate number of rows in each group
 cv <- function(da, f, data, k) {
   # Calculate the number of groups
   groups <- ceiling(nrow(data) / k)
@@ -37,13 +45,13 @@ cv <- function(da, f, data, k) {
     # Indices of all the members of the current group
     ind  <- (i * 10 - 9):min((i * 10), nrow(data))
 
-    # Create the LDA model using all data except the data in the group
-    lfit <- da(f, data[-1 * ind,]);
+    # Create the *DA model using all data except the data in the group
+    fit <- da(f, data[-1 * ind,]);
     
     # Predict values for the group members
     for (i in ind) {
-      # FIXME: do not refer to Kyphosis here
-      if (with(data[i,], get(toString(f[2]))) != predict(lfit, data[i,])$class[1]) {
+      # Get indicator value for current index and compare with prediction
+      if (with(data[i,], get(toString(f[2]))) != predict(fit, data[i,])$class[1]) {
         miss <- miss + 1
       }
     }
@@ -53,44 +61,30 @@ cv <- function(da, f, data, k) {
 }
 @
 
+Using this function we perform 10-fold cross validation on the linear discriminant model.
 <<tidy=FALSE>>=
 cv(lda, Kyphosis ~ Age + Number + Start, kyphosis, 10)
 @
 
-<<tidy=FALSE>>=
-qfit <- qda(Kyphosis ~ Age + Number + Start, kyphosis)
-@
-
+Next, we do the same for the quadratic discriminant model.
 <<tidy=FALSE>>=
 cv(qda, Kyphosis ~ Age + Number + Start, kyphosis, 10)
 @
-
-%<<tidy=FALSE>>=
-%for (i in 1:nrow(kyphosis)) {
-%  cat("REAL:", kyphosis[i,]$Kyphosis[1])
-%  cat(" PREDICT:", predict(lfit, kyphosis[i,])$class[1], "\n")
-%}
-%@
-
-%<<tidy=FALSE>>=
-%for (i in 1:nrow(kyphosis)) {
-%  cat("REAL:", kyphosis[i,]$Kyphosis[1])
-%  cat(" PREDICT:", predict(qfit, kyphosis[i,])$class[1], "\n")
-%}
-%@
+We see that for this data, the linear discriminant seems to perform a bit better.
 
 \subsection*{(2)}
+To be able to use the \texttt{knn()} function we load the \texttt{class} library of R.
 <<tidy=FALSE>>=
 library(class)
 @
 
-%<<tidy=FALSE>>=
-%kfit <- knn(train=kyphosis[2:4], test=kyphosis[2:4], cl=kyphosis$Kyphosis, k = 1)
-%print(kyphosis$Kyphosis)
-%print(kfit)
-%@
-
+The following function performs $n$-fold cross validation on the $k$-nearest neighbor classifier.
 <<tidy=FALSE>>=
+# K-fold cross validation for KNN
+# - data:      data table
+# - cl:        the actual class of the data
+# - k:         number of nearest neighbors to use in the KNN classifier
+# - groupsize: approximate number of rows in each group
 knncv <- function(data, cl, k, groupsize) {
   # Calculate the number of groups
   groups <- ceiling(nrow(data) / groupsize)
@@ -117,6 +111,7 @@ knncv <- function(data, cl, k, groupsize) {
 }
 @
 
+Using this function we find what $k$ gives the best KNN classifier.
 <<tidy=FALSE>>=
 best<- 1
 for (k in 1:60) {
@@ -132,33 +127,51 @@ print(best)
 @
 
 \section*{Problem B}
+First, we load the given helper function and data table.
 <<tidy=FALSE>>=
 source('probBhelp.R')
 source('probBdata.R')
 @
+For the data in \texttt{data3A} we have the following model
+\begin{equation}
+x_t = \beta_1 x_{t-1} + \beta_2 x_{t-2} + \epsilon_t
+\end{equation}
 
+Minimizing the sum of squared residuals, and sum of absolute residuals, we obtain the minimizers $\hat{\beta}_{LS}$ and $\hat{\beta}_{LA}$. They are calculated using the provided function \texttt{ARp.beta.est()}.
 <<tidy=FALSE>>=
 afit <- ARp.beta.est(data3A$x, 2)
 @
 
+The vectors of the residuals obtained using these two estimators are calculated using the \texttt{ARp.resid()} function.
 <<tidy=FALSE>>=
-# The length of the residual vector is maybe 2 elements too short?
 afit$LSe <- ARp.resid(data3A$x, afit$LS)
 afit$LAe <- ARp.resid(data3A$x, afit$LA)
 @
 
+The following function performs the residual resampling bootstrap method on a given $\beta$ estimator. First, it picks a random starting point in the initial chain of measurements. By resampling the residuals obtained earlier, and the given $\beta$ estimator, it generates a new chain of $x$ values. From this chain we get one bootstrap estimate for the $\beta$ parameter. We repeat this to obtain a bootstrap distribution for the estimator.
 <<tidy=FALSE>>=
-boot <- function(eobs, beta, n, field) {
+# Bootstrap method for the ARp beta estimators
+# - x:     vector with measured x values
+# - eobs:  residual vector
+# - beta:  vector with two beta estimators
+# - nseq:  length of chain to generate
+# - n:     number of bootstrap estimates to obtain
+# - field: name of beta estimator to be used (LS or LA)
+boot <- function(x, eobs, beta, nseq, n, field) {
   res <- matrix(data=NA, nrow=n, ncol=2)
   
   for (i in 1:n) {
-    e <- sample(eobs, size=length(eobs), replace=TRUE)
+    # Sample from the residuals with replacement
+    e <- sample(eobs, nseq, replace=TRUE)
     
-    x0start <- sample(1:(length(eobs)-1), 1)
-    x0 <- eobs[x0start:(x0start+1)]
+    # Find a random starting point in the chain
+    x0start <- sample(1:(length(x)-1), 1)
+    x0 <- x[x0start:(x0start+1)]
     
+    # Create new x vector using beta estimate and resampled residuals
     x <- ARp.filter(x0, beta, e)
 
+    # Compute bootstrap estimate
     res[i,] <- with(ARp.beta.est(x, 2), get(field))
   }
   
@@ -166,32 +179,37 @@ boot <- function(eobs, beta, n, field) {
 }
 @
 
+We use this function to compute a bootstrap distribution of the two $\beta$ parameters for each estimator method.
 <<tidy=FALSE>>=
-LSboot <- boot(afit$LSe, afit$LS, 1500, "LS")
-LAboot <- boot(afit$LAe, afit$LA, 1500, "LA")
+LSboot <- boot(data3A$x, afit$LSe, afit$LS, 100, 1500, "LS")
+LAboot <- boot(data3A$x, afit$LAe, afit$LA, 100, 1500, "LA")
 @
 
-<<lsboot, fig.cap='LSBOOT', cache=TRUE, eval=TRUE, echo=TRUE, fig.height=4>>=
+Figure \ref{fig:lsboot} is plotted as follows, and shows how the boostrap estimates of the least squares $\beta$ estimators are distributed.
+<<lsboot, fig.cap='LSBOOT', cache=TRUE, eval=TRUE, echo=TRUE, fig.height=3>>=
 par(mfrow=c(1,2))
 hist(LSboot[,1], 40)
 hist(LSboot[,2], 40)
 @
 
-<<laboot, fig.cap='LSBOOT', cache=TRUE, eval=TRUE, echo=TRUE, fig.height=4>>=
+Figure \ref{fig:laboot} shows the same, for the least absolute residual estimator.
+<<laboot, fig.cap='LSBOOT', cache=TRUE, eval=TRUE, echo=TRUE, fig.height=3>>=
 par(mfrow=c(1,2))
 hist(LAboot[,1], 40)
 hist(LAboot[,2], 40)
 @
+We can see from the histograms that the least absolute value estimator has a sharper peak, with less variance.
 
-Variance:
+The variance is computed and compared
 <<tidy=FALSE>>=
 var(LSboot[,1])
 var(LSboot[,2])
 var(LAboot[,1])
 var(LAboot[,2])
 @
+and we see that the variance is about ten times smaller for the least absolute value estimator.
 
-Bias:
+For the bias, we compute the mean of the bootstrap estimates, and subtract the original $\beta$ estimate
 <<tidy=FALSE>>=
 mean(LSboot[,1]) - afit$LS[1]
 mean(LSboot[,2]) - afit$LS[2]
@@ -199,6 +217,9 @@ mean(LAboot[,1]) - afit$LA[1]
 mean(LAboot[,2]) - afit$LA[2]
 @
 
+To find a prediction interval for the next value in the chain, $x_{101}$, we propose a value of $x_{101}$ for each bootstrap estimator. Since we are interested in a prediction interval, an interval in which we are 95\% sure that the next value will fall, we have to take the residuals into consideration. For each proposed $x_{101}$ value we add a random sample from the residuals of the $\beta$ estimator. Of course, if we only wanted to give the value which we thought were most probable to be $x_{101}$ we would not add any residuals at all.
+
+The computation is done as follows for the least squares estimator
 <<tidy=FALSE>>=
 x99  <- data3A$x[99]
 x100 <- data3A$x[100]
@@ -207,7 +228,7 @@ for (i in 1:nrow(LSboot)) {
   x101[i] <- LSboot[i, 1] * x100 + LSboot[i, 2] * x99 + sample(afit$LSe, 1)
 }
 @
-
+and Figure \ref{fig:lsx101} shows the distribution of this predicted value.
 <<lsx101, fig.cap='LS $x_{101}$', cache=TRUE, eval=TRUE, echo=TRUE, fig.height=4>>=
 hist(x101, 50)
 @
@@ -244,7 +265,8 @@ We see that \ref{fig:boxplot} is a boxplot.
 
 Linear Model.
 <<tidy=FALSE>>=
-fit <- lm(log(meas) ~ pers - 1, bilirubin)
+# We want the intercept, for some reason.
+fit <- lm(log(meas) ~ pers, bilirubin)
 summary(fit)
 Fval <- summary(fit)$fstatistic[1]
 @
@@ -254,7 +276,7 @@ Fval <- summary(fit)$fstatistic[1]
 <<tidy=FALSE>>=
 permTest <- function(billy) {
   billy$meas <- sample(billy$meas)
-  lfit <- lm(log(meas) ~ pers - 1, billy)
+  lfit <- lm(log(meas) ~ pers, billy)
   return(summary(lfit)$fstatistic[1])
 }
 @
@@ -281,18 +303,42 @@ length(Fs[Fs > Fval]) / length(Fs)
 EM Algorithm.
 
 \subsection*{(1)}
-<<tidy=FALSE>>=
-df <- data.frame(
-  y=c(5, 8, 7, 10, NA, 12),
-  rw=as.factor(c(1,1,1,2,2,2)),
-  cl=as.factor(c(1,2,3,1,2,3))
-  )
+<<tidy=FALSE, message=FALSE>>=
+require(reshape)
 
-for (i in 1:10) {
-  fit <- lm(y ~ rw + cl - 1, df)
-  df[5,1] <- predict(fit, data.frame(rw=as.factor(2), cl=as.factor(2)))
-  print(df)
+y <- rbind(c(5, 7, 8), c(10, NA, 12))
+
+old <- NA
+
+plt <- list("a1", "a2", "b1", "b2", "b3", "id")
+
+i <- 1
+while (TRUE) {
+  mu = mean(y, na.rm=TRUE)
+  plt$a1[i] <- mean(y[1,], na.rm=TRUE) - mu
+  plt$a2[i] <- mean(y[2,], na.rm=TRUE) - mu
+  plt$b1[i] <- mean(y[,1], na.rm=TRUE) - mu
+  plt$b2[i] <- mean(y[,2], na.rm=TRUE) - mu
+  plt$b3[i] <- mean(y[,3], na.rm=TRUE) - mu
+  plt$id[i] <- i
+  y[2,2]   <- mu + plt$a2[i] + plt$b2[i]
+  diff     <- old - y[2,2]
+  
+  i <- i + 1
+  old <- y[2,2]
+  
+  if (!is.na(diff) && abs(diff) < 1e-5) break
 }
+
+df <- data.frame(plt$id, plt$a1, plt$a2, plt$b1, plt$b2, plt$b3)
+colnames(df) <- c('id', 'a1', 'a2', 'b1', 'b2', 'b3')
+
+dfr <- melt(df, id.vars=1)
+@
+
+<<emplot, fig.cap='EM', cache=TRUE, eval=TRUE, echo=TRUE, fig.height=2.5, fig.width=6, fig.align='center'>>=
+require(ggplot2)
+ggplot(dfr, aes(x=id, y=value, colour=variable)) + geom_line()
 @
 
 \subsection*{(2)}
