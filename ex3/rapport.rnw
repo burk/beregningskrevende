@@ -217,62 +217,71 @@ mean(LAboot[,1]) - afit$LA[1]
 mean(LAboot[,2]) - afit$LA[2]
 @
 
-To find a prediction interval for the next value in the chain, $x_{101}$, we propose a value of $x_{101}$ for each bootstrap estimator. Since we are interested in a prediction interval, an interval in which we are 95\% sure that the next value will fall, we have to take the residuals into consideration. For each proposed $x_{101}$ value we add a random sample from the residuals of the $\beta$ estimator. Of course, if we only wanted to give the value which we thought were most probable to be $x_{101}$ we would not add any residuals at all.
+To find a prediction interval for the next value in the chain, $x_{101}$, we propose a value of $x_{101}$ for each bootstrap estimator. Since we are interested in a prediction interval, an interval in which we are 95\% sure that the next value will fall, we have to take the residuals into consideration. For each proposed $x_{101}$ value we add a random sample from the residuals of the $\beta$ estimator. Of course, if we only wanted to give the value which we thought were most probable to be $x_{101}$ we would not add the residual.
 
-The computation is done as follows for the least squares estimator
+The computation is done as follows for the least squares estimator.
 <<tidy=FALSE>>=
-x99  <- data3A$x[99]
+x99  <- data3A$x[99] 
 x100 <- data3A$x[100]
-x101 <- rep(0, nrow(LSboot))
+lsx101 <- rep(0, nrow(LSboot))
 for (i in 1:nrow(LSboot)) {
-  x101[i] <- LSboot[i, 1] * x100 + LSboot[i, 2] * x99 + sample(afit$LSe, 1)
+  lsx101[i] <- LSboot[i, 1] * x100 + LSboot[i, 2] * x99 + sample(afit$LSe, 1)
 }
 @
-and Figure \ref{fig:lsx101} shows the distribution of this predicted value.
-<<lsx101, fig.cap='LS $x_{101}$', cache=TRUE, eval=TRUE, echo=TRUE, fig.height=4>>=
-hist(x101, 50)
-@
 
+We repeat the prediction for the least absolute residual estimator.
 <<tidy=FALSE>>=
 x99  <- data3A$x[99]
 x100 <- data3A$x[100]
-x101 <- rep(0, nrow(LAboot))
+lax101 <- rep(0, nrow(LAboot))
 for (i in 1:nrow(LAboot)) {
-  x101[i] <- LAboot[i, 1] * x100 + LAboot[i, 2] * x99 + sample(afit$LAe, 1)
+  lax101[i] <- LAboot[i, 1] * x100 + LAboot[i, 2] * x99 + sample(afit$LAe, 1)
 }
 @
-
-<<lax101, fig.cap='LA $x_{101}$', cache=TRUE, eval=TRUE, echo=TRUE, fig.height=4>>=
-hist(x101, 50)
+Figure \ref{fig:x101} shows the distribution of the predicted values for both of the two different estimators.
+<<x101, fig.cap='$x_{101}$', cache=TRUE, eval=TRUE, echo=TRUE, fig.height=4>>=
+par(mfrow=c(1,2))
+hist(lsx101, 50, main="LS estimator")
+hist(lax101, 50, main="LA estimator")
 @
+We create two quantile-based confidence intervals using the built-in function \texttt{quantile()} of R as follows.
+<<tidy=FALSE>>=
+# Quantile-based confidence interval
 
-Quantile based prediction interval?
+# For the Least Squares estimator
+quantile(lsx101, c(0.025, 0.975))
+# For the Least Absolute residual estimator
+quantile(lax101, c(0.025, 0.975))
+@
 
 \section*{Problem C}
 \subsection*{(1) Boxplot}
-
+First we load the provided data file.
 <<tidy=FALSE>>=
 bilirubin <- read.table("bilirubin.txt", header=T)
 @
-
+Figure \ref{fig:boxplot} shows a boxplot of the logarithm of the concentration for each person involved in the test.
 <<boxplot, fig.cap='BOXPLOT', cache=TRUE, eval=TRUE, echo=TRUE, fig.height=4>>=
 boxplot(log(meas) ~ pers, data=bilirubin)
 @
 
-We see that \ref{fig:boxplot} is a boxplot.
-
 \subsection*{(2) Linear model}
 
-Linear Model.
+We use \texttt{lm()} to create a fit for our model
+\begin{equation}
+\log Y_{ij} = \beta_{i} + \epsilon_{ij}.
+\end{equation}
+Although the model equation does not include an intercept variable, we will let R include an intercept. If we had not included an intercept, the F-test would give that the model is much better than it actually is, since some of the intercept would be in each $\beta$ parameter.
 <<tidy=FALSE>>=
-# We want the intercept, for some reason.
+# We want the intercept.
 fit <- lm(log(meas) ~ pers, bilirubin)
 summary(fit)
 Fval <- summary(fit)$fstatistic[1]
 @
+The F value is stored in \texttt{Fval}.
 
 \subsection*{(3) \emph{permTest()}}
-
+We write a function \texttt{permTest()} which permutes the measured values in the data frame. It also fits the linear model again, and returns the F-value.
 <<tidy=FALSE>>=
 permTest <- function(billy) {
   billy$meas <- sample(billy$meas)
@@ -282,7 +291,7 @@ permTest <- function(billy) {
 @
 
 \subsection*{(4) Permutation test}
-
+We run the function created in the last exercise 999 times to obtain 999 F-values. 
 <<tidy=FALSE>>=
 Fs <- rep(NA, 999)
 for (i in 1:999) {
@@ -290,19 +299,27 @@ for (i in 1:999) {
 }
 @
 
-<<fhist, fig.cap='FHIST', cache=TRUE, eval=TRUE, echo=TRUE, fig.height=4>>=
-hist(Fs, 50)
-@
-
+To test our original F-value obtained in the original linear model, we check how many of the bootstrapped F-values are greater than the original one. Dividing by the total number of F values, we obtain a $p$-value for how probable it is to obtain a permutation at least as extreme as the original one, by chance.
 <<tidy=FALSE>>=
 length(Fs[Fs > Fval]) / length(Fs)
 @
 
 \section*{Problem D}
 
-EM Algorithm.
-
 \subsection*{(1)}
+We impute the missing value exactly as described in the lectures
+\begin{equation}
+\begin{aligned}
+\hat{\mu} &= \bar{y} \\
+\hat{\alpha}_i &= \bar{y}_{i.} - \bar{y} \\
+\hat{\beta}_j  &= \bar{y}_{.j} - \bar{y}.
+\end{aligned}
+\end{equation}
+Imputing the missing value $y_{22}$ with
+\begin{equation}
+y_{22} = \hat{\mu} + \hat{\alpha}_2 + \hat{\beta}_2
+\end{equation}
+maximizes the likelihood of the model.
 <<tidy=FALSE, message=FALSE>>=
 require(reshape)
 
@@ -310,17 +327,21 @@ y <- rbind(c(5, 7, 8), c(10, NA, 12))
 
 old <- NA
 
+# Maybe a bit wierd this setup...
 plt <- list("a1", "a2", "b1", "b2", "b3", "id")
 
 i <- 1
 while (TRUE) {
+  # Mean of all the y values
   mu = mean(y, na.rm=TRUE)
+  # Estimate the parameters. This is the expectation step
   plt$a1[i] <- mean(y[1,], na.rm=TRUE) - mu
   plt$a2[i] <- mean(y[2,], na.rm=TRUE) - mu
   plt$b1[i] <- mean(y[,1], na.rm=TRUE) - mu
   plt$b2[i] <- mean(y[,2], na.rm=TRUE) - mu
   plt$b3[i] <- mean(y[,3], na.rm=TRUE) - mu
   plt$id[i] <- i
+  # Fill in missing value. This is the maximization step
   y[2,2]   <- mu + plt$a2[i] + plt$b2[i]
   diff     <- old - y[2,2]
   
@@ -336,6 +357,7 @@ colnames(df) <- c('id', 'a1', 'a2', 'b1', 'b2', 'b3')
 dfr <- melt(df, id.vars=1)
 @
 
+Figure \ref{fig:emplot} shows a plot of how the different parameters evolve.
 <<emplot, fig.cap='EM', cache=TRUE, eval=TRUE, echo=TRUE, fig.height=2.5, fig.width=6, fig.align='center'>>=
 require(ggplot2)
 ggplot(dfr, aes(x=id, y=value, colour=variable)) + geom_line()
