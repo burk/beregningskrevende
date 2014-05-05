@@ -113,7 +113,7 @@ knncv <- function(data, cl, k, groupsize) {
 
 Using this function we find what $k$ gives the best KNN classifier.
 <<tidy=FALSE>>=
-best<- 1
+best <- 1
 for (k in 1:60) {
   res <- knncv(kyphosis[,2:4], kyphosis[,1], k, 10)
   if (res < best) {
@@ -323,7 +323,7 @@ maximizes the likelihood of the model.
 <<tidy=FALSE, message=FALSE>>=
 require(reshape)
 
-y <- rbind(c(5, 7, 8), c(10, NA, 12))
+y <- rbind(c(5, 8, 7), c(10, NA, 12))
 
 old <- NA
 
@@ -355,16 +355,16 @@ df <- data.frame(plt$id, plt$a1, plt$a2, plt$b1, plt$b2, plt$b3)
 colnames(df) <- c('id', 'a1', 'a2', 'b1', 'b2', 'b3')
 
 dfr <- melt(df, id.vars=1)
+
+print(y[2,2])
 @
+
+\subsection*{(2)}
 
 Figure \ref{fig:emplot} shows a plot of how the different parameters evolve.
 <<emplot, fig.cap='EM', cache=TRUE, eval=TRUE, echo=TRUE, fig.height=2.5, fig.width=6, fig.align='center'>>=
 require(ggplot2)
 ggplot(dfr, aes(x=id, y=value, colour=variable)) + geom_line()
 @
-
-\subsection*{(2)}
-
-PLOT.
 
 \end{document}
